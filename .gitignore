@@ -1,0 +1,13 @@
+# Quickshell / Qt compiled caches
+*.qmlc
+*.jsc
+.qmlls.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
