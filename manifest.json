@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.mindows.mib-nprofiles",
+  "name": "MIB nProfiles",
+  "version": "0.1.0",
+  "author": "Min Kim",
+  "license": "MIT",
+  "description": "Network profiles like macOS Locations: named sets of IP, DNS, IPv6, Wi-Fi and VPN settings you switch with one click, or automatically by Wi-Fi network or Ethernet. Applied through NetworkManager with no root and without editing saved connections.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "MIB nProfiles",
+    "description": "Switch network profiles (IP, DNS, IPv6, VPN) by hand or by Wi-Fi network.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "autoSwitch": true,
+      "notify": true,
+      "profiles": [],
+      "rules": []
+    },
+    "schema": [
+      {
+        "key": "autoSwitch",
+        "type": "boolean",
+        "label": "Switch profiles automatically",
+        "defaultValue": true
+      },
+      {
+        "key": "notify",
+        "type": "boolean",
+        "label": "Notify on automatic switches",
+        "defaultValue": true
+      }
+    ]
+  }
+}

@@ -30,9 +30,9 @@ A **profile** holds, each part optional (unset = keep what the network gives):
 
 | Part | Values |
 |---|---|
-| IPv4 | Automatic (DHCP), or Manual: address/prefix and gateway, for Wi-Fi or Ethernet |
+| IPv4 | As saved, DHCP (even where the saved connection is static), or Manual: address/prefix and gateway, for Wi-Fi or Ethernet |
 | DNS | server list, search domains. When set, DNS from the network is ignored |
-| IPv6 | Automatic, or Off |
+| IPv6 | As saved, or Off |
 | Wi-Fi | join one of your saved Wi-Fi networks on switch |
 | VPN | bring up one of your NetworkManager VPN / WireGuard connections |
 
@@ -54,6 +54,12 @@ hand, rules stay quiet until the set of connected networks changes (a
 different SSID, a cable plugged or pulled). This matches what people expect
 from a location switcher: it shouldn't fight you, but it should follow you to
 the next place.
+
+**Being offline isn't a change of place.** Sleep, a roam or a dropped link
+briefly leaves no network connected. That doesn't clear a manual pick, and
+while offline the rules only switch if one of them matches (an in-range rule
+can), never to the fallback. Otherwise every lid close would switch to the
+fallback and back, with a notification each way.
 
 ### Left out on purpose
 
@@ -80,16 +86,59 @@ settings *active on a device* and nothing else:
 
 The price of runtime-only changes: they last until the device reconnects. So
 the widget keeps one `nmcli monitor` running and, when a device (re)connects,
-re-evaluates the rules and applies the chosen profile again. If the shell
-isn't running (before login, say), your saved connection settings apply, which
-is a safe default.
+re-evaluates the rules and applies the chosen profile again (measured: about
+two seconds after a Wi-Fi reconnect). If the shell isn't running (before
+login, say), your saved connection settings apply, which is a safe default.
+
+Each device remembers what was applied, keyed by its active connection's
+D-Bus path. A reconnect gets a new path, which is how a new activation is
+told apart from our own change, and why applying is idempotent: the
+`nmcli monitor` events our own changes cause don't make it apply again.
+
+**Something else can reset a device without saying so.** `nmcli device
+reapply` (which `omarchy dns` runs on every connection) drops our runtime
+settings, and `nmcli monitor` prints nothing. So every refresh (at least every
+30 seconds) reads the live values back (`nmcli device show`) and applies
+again if the profile's settings are gone. Only what reads back reliably is
+compared: IPv4 DNS, IPv6 being off, a manual address. It skips a device for 10
+seconds after our own apply, while it settles. Measured recovery after an
+external reset: about six seconds.
+
+Switching between two profiles first resets the device (`nmcli device
+reapply`) and then applies the new one, so a profile only ever adds to the
+saved connection and never inherits leftovers from the previous profile.
 
 A profile's DNS and IPv6 parts apply to every connected Wi-Fi and Ethernet
 device. A Manual IPv4 address applies only to the device type it was entered
 for, since one address on two links would be wrong.
 
 VPNs and Wi-Fi joins use `nmcli connection up`. On a switch away, the widget
-takes down only a VPN it brought up itself.
+takes down only a VPN it brought up itself; a VPN you started stays up.
+
+A Wi-Fi join is only attempted when that network is in range. Asking
+NetworkManager for a saved network that isn't around can drop the current
+connection while it tries, so switching to a profile with a join, somewhere
+the network doesn't exist, just says so and leaves you connected.
+
+### One engine, many monitors
+
+A bar widget is instantiated once per monitor. Anything that acts (watching
+NetworkManager, rules, applying, notifying) would then run once per screen, so
+the plugin has two kinds: a `service` (`Service.qml`, one instance) does all
+of it, and the `bar-widget` (`Panel.qml`) only displays the service's state
+and forwards clicks. Opening the popup from a keybinding goes through the
+shell's `toggle`, which picks the widget on the focused monitor.
+
+### Settings and the file watcher
+
+Settings live on the widget's entry in `shell.json`. The service writes it,
+and every write comes back through the shell's file watcher. An echo of an
+earlier write can arrive after a later one, and acting on it would undo a
+switch the user just made (found in testing: four quick switches could land
+on the wrong profile). So the active profile and the manual pick are the
+service's own state, read from the file once at startup and after that only
+written. For a few seconds after a write, any other settings that arrive and
+differ from what was just written are treated as a stale echo.
 
 ### Loops
 
@@ -102,9 +151,12 @@ any further join.
 
 In-range rules read NetworkManager's scan list (`nmcli device wifi list
 --rescan no`), which is cached and flickers at the edge of reception. A
-network has to be seen, or missing, in two consecutive reads before an
-in-range rule changes its mind. The widget only asks for a rescan (every two
-minutes) while at least one in-range rule exists.
+network has to be seen, or missing, in two consecutive reads (30 seconds
+apart) before an in-range rule changes its mind. The widget only asks for a
+rescan (every two minutes) while at least one in-range rule exists.
+
+In-range rules trust broadcasts: anyone can advertise any network name. The
+README says not to use them for a profile that would be unsafe elsewhere.
 
 ## Known conflicts
 
@@ -119,9 +171,24 @@ minutes) while at least one in-range rule exists.
 
 - The widget makes **no network requests** of its own. It reads NetworkManager
   state and runs `nmcli`.
-- SSIDs, addresses and DNS servers are passed to `nmcli` as arguments, so they
-  show up in the process list. Any local user can already read the same values
-  from NetworkManager over D-Bus (`nmcli device show`), so this discloses
-  nothing new.
+- **SSIDs are hostile input.** They are up to 32 arbitrary bytes chosen by
+  whoever runs an access point, and `nmcli -t` doesn't escape a newline inside
+  one. Read as plain `SSID`, a broadcast name like `x\nyes:mk` would add a
+  forged line saying you're connected to `mk`, and trip your Home rule at a
+  café. The scan list is read as `SSID-HEX` and decoded by the plugin, so a
+  name can never break the line format (there's a test for exactly this).
+  Decoded names are stripped of control, format and bidi characters and
+  capped, are only ever shown as plain text, and are markup-escaped in
+  notification bodies.
+- Addresses, DNS servers and connection UUIDs are passed to `nmcli` as
+  separate arguments (never a shell string), after validation, so they show
+  up in the process list for a moment. Any local user can already read the
+  same values from NetworkManager over D-Bus (`nmcli device show`), so this
+  discloses nothing new. SSIDs are never passed as arguments to `nmcli`; joins
+  use the saved connection's UUID. Notification text, which can name an SSID,
+  reaches `omarchy-notification-send` as arguments, as for every Omarchy
+  notification.
+- All `nmcli` output is read with `LC_ALL=C`, because nmcli translates states
+  such as `connected`.
 - Profiles and rules live in the widget's entry in
   `~/.config/omarchy/shell.json`. Nothing else is written to disk.
