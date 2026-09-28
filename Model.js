@@ -38,14 +38,23 @@ var DEVICE_KINDS = [
 
 // Anything we show that came from outside our own code (SSIDs are whatever a
 // nearby access point broadcasts, connection names are user-chosen) goes
-// through here: control, format and bidi characters removed, whitespace
-// collapsed, length capped.
+// through here. Invisible format, bidi, tag and variation-selector characters
+// are deleted outright, since the soft hyphen, ZWJ and selectors sit inside
+// ordinary words and emoji; control characters and line separators become
+// spaces; whitespace is collapsed; the length is capped with an ellipsis,
+// never splitting a surrogate pair.
+var INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufe00-\ufe0f\ufeff\ufff9-\ufffb\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/gu
+var BREAKING = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
+
 function cleanText(value, max) {
   var text = String(value === undefined || value === null ? "" : value)
-  text = text.replace(/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g, " ")
+  text = text.replace(INVISIBLE, "").replace(BREAKING, " ")
   text = text.replace(/\s+/g, " ").trim()
   var cap = max || 120
-  return text.length > cap ? text.slice(0, cap) : text
+  if (text.length <= cap) return text
+  var cut = text.slice(0, cap - 1)
+  if (/[\ud800-\udbff]$/.test(cut)) cut = cut.slice(0, -1)
+  return cut.replace(/\s+$/, "") + "\u2026"
 }
 
 // For a notification body, which Omarchy renders as StyledText.
@@ -88,6 +97,12 @@ function lines(text) {
 // `nmcli -t -f DEVICE,TYPE,STATE,CON-UUID,CON-PATH,CONNECTION device status`
 // -> connected Wi-Fi and Ethernet devices only. Everything else (loopback,
 // tun devices such as tailscale0, p2p) is never ours to touch.
+//
+// nmcli doesn't escape a newline in the connection name, and NetworkManager
+// names a new Wi-Fi connection after its SSID, so a network name can start a
+// line of its own. A real row must carry a UUID and an active-connection
+// path, which together don't fit in an SSID's 32 bytes, so such a line can't
+// pose as a connected device (say, Ethernet, to trigger an Ethernet rule).
 function parseDevices(text) {
   var out = []
   var rows = lines(text)
@@ -98,6 +113,7 @@ function parseDevices(text) {
     if (type !== "wifi" && type !== "ethernet") continue
     if (f[2] !== "connected") continue
     if (!/^[A-Za-z0-9_.:@-]{1,15}$/.test(f[0])) continue
+    if (!isUuid(f[3]) || !/^\/org\/freedesktop\/NetworkManager\/ActiveConnection\/\d+$/.test(f[4])) continue
     out.push({
       device: f[0],
       type: type,

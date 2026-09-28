@@ -36,6 +36,15 @@ test("parseDevices keeps only connected Wi-Fi and Ethernet", () => {
   assert.equal(devices[1].connection, "Wired: dock")
 })
 
+test("a connection name with a newline can't forge a device", () => {
+  // NetworkManager names a new Wi-Fi connection after the SSID, and nmcli
+  // leaves a newline in it unescaped. 23 bytes, so it fits in an SSID.
+  const forged = "x:ethernet:connected:::"
+  const text = "wlp61s0:wifi:connected:4fe5425c-cf89-4d55-9e64-4a2521acbaff:/org/freedesktop/NetworkManager/ActiveConnection/8:cafe\n" + forged
+  const devices = M.parseDevices(text)
+  assert.deepEqual(devices.map((d) => d.type), ["wifi"])
+})
+
 test("parseWifiList decodes SSID-HEX and separates connected from visible", () => {
   const hex = (s) => Buffer.from(s, "utf8").toString("hex").toUpperCase()
   const text = ["yes:" + hex("mk"), "no:" + hex("work:5G"), "no:", "no:" + hex("mk"), "no:" + hex("caf\u00e9 \u202eevil"), "no:ZZ", "maybe:" + hex("x")].join("\n")
@@ -251,8 +260,15 @@ test("stabilize needs two scans to add or drop", () => {
 })
 
 test("text hygiene", () => {
-  assert.equal(M.cleanText("a\u200b\u202eb\n\tc  d"), "a b c d")
+  assert.equal(M.cleanText("a\u200b\u202eb\n\tc  d"), "ab c d")
   assert.equal(M.cleanText("x".repeat(200)).length, 120)
+  assert.equal(M.cleanText("x".repeat(200)).slice(-1), "\u2026")
+  // Invisible characters inside words are deleted, not spaced.
+  assert.equal(M.cleanText("in\u00advisible zw\u200dj"), "invisible zwj")
+  assert.equal(M.cleanText("a" + String.fromCodePoint(0xe0041, 0xe007f) + "b\ufe0f"), "ab")
+  // A cap never cuts a surrogate pair in half.
+  const capped = M.cleanText("ab" + String.fromCodePoint(0x1f600).repeat(3), 4)
+  assert.equal(capped, "ab\u2026")
   assert.equal(M.escapeMarkup('<a href="x">&</a>'), "&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;")
   assert.equal(M.errorLine("Error: Connection activation failed.\n"), "Connection activation failed.")
 })
