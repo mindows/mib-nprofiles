@@ -602,7 +602,7 @@ Panel {
               textFormat: Text.PlainText
               width: parent.width
               text: [
-                root.manifest && root.manifest.name ? root.manifest.name : "MIB nProfiles",
+                root.manifest && root.manifest.name ? root.manifest.name : "MIB Network Profiles",
                 root.manifest && root.manifest.version ? root.manifest.version : ""
               ].join(" ").trim()
                 + (root.manifest && root.manifest.license ? " · " + root.manifest.license : "")

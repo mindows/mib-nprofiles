@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "io.github.mindows.mib-nprofiles",
-  "name": "MIB nProfiles",
+  "name": "MIB Network Profiles",
   "version": "0.1.0",
   "author": "Min Kim",
   "license": "MIT",
@@ -15,7 +15,7 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "MIB nProfiles",
+    "displayName": "MIB Network Profiles",
     "description": "Switch network profiles (IP, DNS, IPv6, VPN) by hand or by Wi-Fi network.",
     "category": "System",
     "allowMultiple": false,

@@ -1,4 +1,4 @@
-# MIB nProfiles
+# MIB Network Profiles
 
 An [Omarchy](https://omarchy.org/) bar widget for switching network profiles,
 like Locations on macOS. A profile is a named set of network settings (DHCP or
@@ -182,9 +182,10 @@ had applied last until the device next reconnects.
 
 ## Development
 
+From a checkout of this repo:
+
 ```bash
-git clone https://github.com/mindows/mib-nprofiles.git ~/dev/mib-nprofiles
-ln -s ~/dev/mib-nprofiles ~/.config/omarchy/plugins/io.github.mindows.mib-nprofiles
+ln -s "$PWD" ~/.config/omarchy/plugins/io.github.mindows.mib-nprofiles
 omarchy-shell shell rescanPlugins
 omarchy plugin enable io.github.mindows.mib-nprofiles
 ```
